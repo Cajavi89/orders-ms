@@ -4,14 +4,14 @@ import { PrismaService } from 'src/prisma.service';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderStatusDto } from './dto/change-order.dto';
-import { PRODUCT_SERVICE } from '../config/services';
+import { NATS_SERVICE } from '../config/services';
 import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
-    @Inject(PRODUCT_SERVICE) private readonly productsClient: ClientProxy,
+    @Inject(NATS_SERVICE) private readonly natsClient: ClientProxy,
   ) {}
 
   async create(createOrderDto: CreateOrderDto) {
@@ -19,7 +19,7 @@ export class OrdersService {
       // confirmar los ids de los productos
       const productIds = createOrderDto.items.map((item) => item.productId);
       const products: any[] = await firstValueFrom(
-        this.productsClient.send({ cmd: 'validate_products' }, productIds),
+        this.natsClient.send({ cmd: 'validate_products' }, productIds),
       );
 
       // 2. calculos de los valores
@@ -111,6 +111,15 @@ export class OrdersService {
   async findOne(id: string) {
     const order = await this.prisma.order.findFirst({
       where: { id },
+      include: {
+        orderItem: {
+          select: {
+            price: true,
+            quantity: true,
+            productId: true,
+          },
+        },
+      },
     });
 
     if (!order) {
@@ -119,7 +128,20 @@ export class OrdersService {
         message: `Order with id ${id} not found`,
       });
     }
-    return order;
+
+    const productsIds = order.orderItem.map((orderItem) => orderItem.productId);
+    const products: any[] = await firstValueFrom(
+      this.natsClient.send({ cmd: 'validate_products' }, productsIds),
+    );
+
+    return {
+      ...order,
+      OrderItem: order.orderItem.map((orderItem) => ({
+        ...orderItem,
+        name: products.find((product) => product.id === orderItem.productId)
+          .name,
+      })),
+    };
   }
 
   async changeStatus(changeOrderStatusDto: ChangeOrderStatusDto) {
