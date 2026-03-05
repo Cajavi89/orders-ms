@@ -415,10 +415,6 @@ export type OrderItemUncheckedUpdateManyWithoutOrderNestedInput = {
   deleteMany?: Prisma.OrderItemScalarWhereInput | Prisma.OrderItemScalarWhereInput[]
 }
 
-export type NullableStringFieldUpdateOperationsInput = {
-  set?: string | null
-}
-
 export type OrderItemCreateWithoutOrderInput = {
   id?: string
   productId: number

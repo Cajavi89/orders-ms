@@ -6,6 +6,8 @@ import { OrderPaginationDto } from './dto/order-pagination.dto';
 import { ChangeOrderStatusDto } from './dto/change-order.dto';
 import { NATS_SERVICE } from '../config/services';
 import { firstValueFrom } from 'rxjs';
+import { OrderWithProducts } from './interfaces/order-with-products.interface';
+import { PaidOrderDto } from './dto/paid-order.dto';
 
 @Injectable()
 export class OrdersService {
@@ -156,5 +158,45 @@ export class OrdersService {
       where: { id },
       data: { status },
     });
+  }
+
+  async createPaymentSession(order: OrderWithProducts) {
+    const paymentSession = await firstValueFrom(
+      this.natsClient.send('create.payment.session', {
+        orderId: order.id,
+        currency: 'usd',
+        items: order.orderItem.map((item) => ({
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+      }),
+    );
+
+    return paymentSession;
+  }
+
+  async paidOrder(paidOrderDto: PaidOrderDto) {
+    console.log('🚀 ~ OrdersService ~ paidOrder ~ paidOrderDto:', paidOrderDto);
+    const order = await this.prisma.order.update({
+      where: {
+        id: paidOrderDto.orderId,
+      },
+      data: {
+        status: 'PAID',
+        paid: true,
+        paidAt: new Date(),
+        stripeChargeId: paidOrderDto.stripePaymentId,
+
+        // relacion
+        orderReceipt: {
+          create: {
+            receiptUrl: paidOrderDto.receiptUrl,
+          },
+        },
+      },
+    });
+
+    return order;
   }
 }
